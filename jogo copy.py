@@ -2,11 +2,6 @@ import pygame
 import sys
 import os
 import random
-import json
-import queue
-import socket
-import threading
-import time
 
 pygame.init()
 
@@ -21,9 +16,6 @@ AZUL_CEU = (135, 206, 235)
 VERDE = (80, 180, 80)
 MARROM = (120, 80, 40)
 PRETO = (0, 0, 0)
-ONLINE = os.environ.get("JOGO_ONLINE") == "1"
-SERVIDOR_IP = os.environ.get("JOGO_SERVIDOR_IP", "192.168.1.191")
-SERVIDOR_PORTA = int(os.environ.get("JOGO_SERVIDOR_PORTA", "50007"))
 
 jogador_img = pygame.image.load("artes/jogador.png").convert_alpha()
 inimigo_img = pygame.image.load("artes/inimigo.png").convert_alpha()
@@ -54,9 +46,6 @@ boss_img = pygame.transform.scale(boss_img, (96, 96))
 inimigo_img_esquerda = pygame.transform.flip(inimigo_img, True, False)
 especial_img_esquerda = pygame.transform.flip(especial_img, True, False)
 boss_img_esquerda = pygame.transform.flip(boss_img, True, False)
-outro_jogador_img = jogador_img.copy()
-outro_jogador_img.fill((80, 170, 255, 150), special_flags=pygame.BLEND_RGBA_MULT)
-outro_jogador_img_esquerda = pygame.transform.flip(outro_jogador_img, True, False)
 
 
 def ajustar_y(y):
@@ -69,72 +58,6 @@ def criar_rect(x, y, largura, altura):
 
 def criar_inimigo(x, y, vel, minimo, maximo):
     return {"rect": criar_rect(x, y, 50, 50), "vel": vel, "min": minimo, "max": maximo}
-
-
-class ClienteRede:
-    def __init__(self, host, porta):
-        self.host = host
-        self.porta = porta
-        self.socket = None
-        self.fila = queue.Queue()
-        self.jogadores = {}
-        self.id = None
-        self.conectado = False
-
-    def conectar(self):
-        try:
-            self.socket = socket.create_connection((self.host, self.porta), timeout=3)
-            self.socket.settimeout(None)
-            self.conectado = True
-        except OSError:
-            self.conectado = False
-            return
-
-        thread = threading.Thread(target=self.receber, daemon=True)
-        thread.start()
-
-    def receber(self):
-        arquivo = self.socket.makefile("r", encoding="utf-8")
-
-        while self.conectado:
-            try:
-                linha = arquivo.readline()
-            except OSError:
-                break
-
-            if not linha:
-                break
-
-            try:
-                mensagem = json.loads(linha)
-            except json.JSONDecodeError:
-                continue
-
-            self.fila.put(mensagem)
-
-        self.conectado = False
-
-    def atualizar(self):
-        while True:
-            try:
-                mensagem = self.fila.get_nowait()
-            except queue.Empty:
-                break
-
-            if mensagem.get("tipo") == "id":
-                self.id = mensagem.get("id")
-            elif mensagem.get("tipo") == "estado":
-                self.jogadores = mensagem.get("jogadores", {})
-
-    def enviar_estado(self, estado):
-        if not self.conectado or self.socket is None:
-            return
-
-        try:
-            mensagem = json.dumps({"tipo": "estado", "estado": estado}, separators=(",", ":")) + "\n"
-            self.socket.sendall(mensagem.encode("utf-8"))
-        except OSError:
-            self.conectado = False
 
 
 niveis = [
@@ -287,9 +210,6 @@ cooldown_ataque = 500
 ultimo_ataque = -cooldown_ataque
 invulneravel_ate = 0
 duracao_invulnerabilidade = 900
-cliente_rede = ClienteRede(SERVIDOR_IP, SERVIDOR_PORTA) if ONLINE else None
-ultimo_envio_rede = 0
-intervalo_envio_rede = 1 / 30
 
 fonte = pygame.font.SysFont(None, 40)
 
@@ -399,49 +319,6 @@ def mostrar_cooldown_especial():
     tela.blit(especial_img, (x, y - 5))
     pygame.draw.rect(tela, PRETO, (x + 34, y, largura_barra, altura_barra), 2)
     pygame.draw.rect(tela, VERDE, (x + 36, y + 2, preenchimento, altura_barra - 4))
-
-
-def atualizar_rede():
-    global ultimo_envio_rede
-
-    if cliente_rede is None:
-        return
-
-    cliente_rede.atualizar()
-    agora = time.time()
-    if agora - ultimo_envio_rede < intervalo_envio_rede:
-        return
-
-    estado = {
-        "x": jogador.x,
-        "y": jogador.y,
-        "direcao": direcao_jogador,
-        "nivel": nivel_atual,
-        "vidas": vidas,
-        "atacando": atacando,
-    }
-    cliente_rede.enviar_estado(estado)
-    ultimo_envio_rede = agora
-
-
-def desenhar_jogadores_rede(camera_x):
-    if cliente_rede is None:
-        return
-
-    agora = time.time()
-    for estado in cliente_rede.jogadores.values():
-        if estado.get("nivel") != nivel_atual:
-            continue
-
-        x = int(estado.get("x", 0))
-        y = int(estado.get("y", 0))
-        direcao = int(estado.get("direcao", 1))
-        desenho = outro_jogador_img_esquerda if direcao == -1 else outro_jogador_img
-        tela.blit(desenho, pygame.Rect(x, y, 50, 60).move(-camera_x, 0))
-
-        if estado.get("atacando"):
-            indicador = pygame.Rect(x - camera_x, y - 12, 50, 6)
-            pygame.draw.rect(tela, (80, 170, 255), indicador)
 
 
 def desenhar_tiles(img, area):
@@ -658,9 +535,6 @@ def avancar_nivel():
     carregar_nivel(nivel_atual + 1)
 
 
-if cliente_rede is not None:
-    cliente_rede.conectar()
-
 carregar_nivel(0)
 
 while True:
@@ -699,8 +573,6 @@ while True:
 
     if vidas <= 0:
         jogo_terminou = True
-
-    atualizar_rede()
 
     if not jogo_terminou:
         teclas = pygame.key.get_pressed()
@@ -817,8 +689,6 @@ while True:
     jogador_visivel = agora >= invulneravel_ate or agora // 100 % 2 == 0
     if jogador_visivel:
         tela.blit(jogador_desenho, jogador.move(-camera_x, 0))
-
-    desenhar_jogadores_rede(camera_x)
 
     mostrar_vidas()
     mostrar_coletaveis()
