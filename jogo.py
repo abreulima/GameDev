@@ -1,6 +1,7 @@
 import pygame
 import sys
 import os
+import random
 
 pygame.init()
 
@@ -162,7 +163,7 @@ niveis = [
         "vida_extra": None,
         "objetivo": None,
         "boss_pos": (1380, 344),
-        "boss_vida": 18,
+        "boss_vida": 14,
     },
 ]
 
@@ -178,9 +179,14 @@ boss = None
 boss_vida = 0
 boss_vida_max = 0
 boss_direcao = -1
+boss_vel_y = 0
+boss_no_chao = False
 boss_projeteis = []
 ultimo_tiro_boss = 0
-cooldown_tiro_boss = 900
+cooldown_tiro_boss = 1800
+ultimo_salto_boss = 0
+proximo_salto_boss = 2400
+vel_x_salto_boss = 0
 
 jogador = pygame.Rect(100, ajustar_y(300), 50, 60)
 vel_y = 0
@@ -222,7 +228,8 @@ def reiniciar_jogo():
 def carregar_nivel(indice):
     global nivel_atual, LARGURA_NIVEL, plataformas, inimigos, coletaveis, vidas_extras
     global total_coletaveis, objetivo, especiais, atacando, invulneravel_ate
-    global boss, boss_vida, boss_vida_max, boss_direcao, boss_projeteis, ultimo_tiro_boss
+    global boss, boss_vida, boss_vida_max, boss_direcao, boss_vel_y, boss_no_chao
+    global boss_projeteis, ultimo_tiro_boss, ultimo_salto_boss, proximo_salto_boss, vel_x_salto_boss
 
     nivel_atual = indice
     dados = niveis[nivel_atual]
@@ -244,13 +251,21 @@ def carregar_nivel(indice):
         boss_vida_max = dados["boss_vida"]
         boss_vida = boss_vida_max
         boss_direcao = -1
+        boss_vel_y = 0
+        boss_no_chao = False
         boss_projeteis = []
         ultimo_tiro_boss = pygame.time.get_ticks()
+        ultimo_salto_boss = pygame.time.get_ticks()
+        proximo_salto_boss = random.randint(1400, 3200)
+        vel_x_salto_boss = 0
     else:
         boss = None
         boss_vida_max = 0
         boss_vida = 0
+        boss_vel_y = 0
+        boss_no_chao = False
         boss_projeteis = []
+        vel_x_salto_boss = 0
     especiais.clear()
     atacando = False
     invulneravel_ate = 0
@@ -335,7 +350,7 @@ def arremessar_especial():
         return
 
     rect = especial_img.get_rect(center=jogador.center)
-    especiais.append({"rect": rect, "vel": direcao_jogador * 10})
+    especiais.append({"rect": rect, "vel": direcao_jogador * 10, "inicio_x": rect.centerx, "alcance": 420})
     ultimo_arremesso = agora
 
 
@@ -393,7 +408,8 @@ def atualizar_especiais():
     for especial in especiais[:]:
         especial["rect"].x += especial["vel"]
 
-        if especial["rect"].right < 0 or especial["rect"].left > LARGURA_NIVEL:
+        distancia = abs(especial["rect"].centerx - especial["inicio_x"])
+        if distancia > especial["alcance"] or especial["rect"].right < 0 or especial["rect"].left > LARGURA_NIVEL:
             especiais.remove(especial)
             continue
 
@@ -409,19 +425,44 @@ def atualizar_especiais():
 
 
 def atualizar_boss():
-    global boss_direcao, ultimo_tiro_boss
+    global boss_direcao, boss_vel_y, boss_no_chao, ultimo_tiro_boss, ultimo_salto_boss
+    global proximo_salto_boss, vel_x_salto_boss
 
     if boss is None or boss_vida <= 0:
         return
 
-    boss.x += boss_direcao * 3
+    agora = pygame.time.get_ticks()
+    if boss_no_chao and agora - ultimo_salto_boss >= proximo_salto_boss:
+        direcao_salto = random.choice([-1, 0, 1])
+        boss_vel_y = -16
+        vel_x_salto_boss = direcao_salto * random.randint(3, 6)
+        if direcao_salto != 0:
+            boss_direcao = direcao_salto
+        boss_no_chao = False
+        ultimo_salto_boss = agora
+        proximo_salto_boss = random.randint(1300, 3400)
+
+    velocidade_horizontal = vel_x_salto_boss if not boss_no_chao else boss_direcao * 3
+    boss.x += velocidade_horizontal
     if boss.left < 1180 or boss.right > LARGURA_NIVEL - 90:
         boss_direcao *= -1
+        vel_x_salto_boss *= -1
+
+    boss_vel_y += gravidade
+    boss.y += boss_vel_y
+    boss_no_chao = False
+
+    for plataforma in plataformas:
+        if boss.colliderect(plataforma):
+            if boss_vel_y > 0:
+                boss.bottom = plataforma.top
+                boss_vel_y = 0
+                boss_no_chao = True
+                vel_x_salto_boss = 0
 
     if jogador.colliderect(boss):
         perder_vida()
 
-    agora = pygame.time.get_ticks()
     if agora - ultimo_tiro_boss >= cooldown_tiro_boss:
         direcao = -1 if jogador.centerx < boss.centerx else 1
         tiro = pygame.Rect(boss.centerx, boss.centery - 6, 28, 12)
@@ -508,6 +549,11 @@ while True:
             sys.exit()
         if evento.type == pygame.KEYDOWN and evento.key == pygame.K_r and jogo_terminou:
             reiniciar_jogo()
+        if evento.type == pygame.KEYDOWN and evento.key == pygame.K_p:
+            vidas = max(vidas, 2)
+            jogo_terminou = False
+            venceu_jogo = False
+            carregar_nivel(len(niveis) - 1)
         if evento.type == pygame.KEYDOWN and evento.key in (pygame.K_SPACE, pygame.K_UP) and not jogo_terminou:
             if saltos_restantes > 0:
                 vel_y = forca_pulo if saltos_restantes == 2 else forca_salto_duplo
