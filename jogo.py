@@ -24,6 +24,7 @@ coletavel_img = pygame.image.load("artes/coletavel.png").convert_alpha()
 objetivo_img = pygame.image.load("artes/objetivo.png").convert_alpha()
 especial_img = pygame.image.load("artes/especial.png").convert_alpha()
 arma_img = pygame.image.load("artes/arma.png").convert_alpha()
+boss_img = pygame.image.load("artes/boss.png").convert_alpha()
 relvatopo_img = pygame.image.load("artes/relvatopo.png").convert_alpha()
 
 if os.path.exists("artes/relvameio.png"):
@@ -40,7 +41,10 @@ coletavel_img = pygame.transform.scale(coletavel_img, (32, 32))
 objetivo_img = pygame.transform.scale(objetivo_img, (64, 64))
 especial_img = pygame.transform.scale(especial_img, (24, 24))
 arma_img = pygame.transform.scale(arma_img, (42, 42))
+boss_img = pygame.transform.scale(boss_img, (96, 96))
 inimigo_img_esquerda = pygame.transform.flip(inimigo_img, True, False)
+especial_img_esquerda = pygame.transform.flip(especial_img, True, False)
+boss_img_esquerda = pygame.transform.flip(boss_img, True, False)
 
 
 def ajustar_y(y):
@@ -76,7 +80,9 @@ niveis = [
         "coletaveis": [
             (290, 310), (585, 260), (925, 320), (1185, 270),
             (1515, 310), (1785, 250), (2115, 300), (2385, 220),
+            (2200, 400), (2400, 400),
         ],
+        "vida_extra": (1450, 310),
         "objetivo": (2500, 376),
     },
     {
@@ -104,6 +110,7 @@ niveis = [
             (1455, 305), (1745, 250), (2045, 295), (2340, 240),
             (2635, 290), (2985, 210),
         ],
+        "vida_extra": (1455, 305),
         "objetivo": (3060, 376),
     },
     {
@@ -135,10 +142,27 @@ niveis = [
         "coletaveis": [
             (225, 300), (465, 245), (760, 290), (1015, 220),
             (1285, 295), (1525, 230), (1795, 280), (2085, 210),
-            (2355, 295), (2615, 235), (2895, 280), (3195, 210),
-            (3475, 275), (3660, 400),
+            (2355, 295), (2615, 235),
         ],
+        "vida_extra": (1795, 280),
         "objetivo": (3680, 376),
+    },
+    {
+        "nome": "Boss",
+        "largura": 1800,
+        "inicio": (120, 300),
+        "boss": True,
+        "plataformas": [
+            (0, 440, 1800, 60),
+            (260, 335, 180, 25), (660, 285, 170, 25),
+            (1050, 335, 180, 25), (1360, 260, 170, 25),
+        ],
+        "inimigos": [],
+        "coletaveis": [],
+        "vida_extra": None,
+        "objetivo": None,
+        "boss_pos": (1380, 344),
+        "boss_vida": 18,
     },
 ]
 
@@ -147,8 +171,16 @@ LARGURA_NIVEL = niveis[0]["largura"]
 plataformas = []
 inimigos = []
 coletaveis = []
+vidas_extras = []
 total_coletaveis = 0
 objetivo = pygame.Rect(0, 0, 64, 64)
+boss = None
+boss_vida = 0
+boss_vida_max = 0
+boss_direcao = -1
+boss_projeteis = []
+ultimo_tiro_boss = 0
+cooldown_tiro_boss = 900
 
 jogador = pygame.Rect(100, ajustar_y(300), 50, 60)
 vel_y = 0
@@ -188,8 +220,9 @@ def reiniciar_jogo():
 
 
 def carregar_nivel(indice):
-    global nivel_atual, LARGURA_NIVEL, plataformas, inimigos, coletaveis
+    global nivel_atual, LARGURA_NIVEL, plataformas, inimigos, coletaveis, vidas_extras
     global total_coletaveis, objetivo, especiais, atacando, invulneravel_ate
+    global boss, boss_vida, boss_vida_max, boss_direcao, boss_projeteis, ultimo_tiro_boss
 
     nivel_atual = indice
     dados = niveis[nivel_atual]
@@ -197,8 +230,27 @@ def carregar_nivel(indice):
     plataformas = [criar_rect(*p) for p in dados["plataformas"]]
     inimigos = [criar_inimigo(*i) for i in dados["inimigos"]]
     coletaveis = [criar_rect(x, y, 32, 32) for x, y in dados["coletaveis"]]
+    if dados["vida_extra"] is None:
+        vidas_extras = []
+    else:
+        vidas_extras = [criar_rect(dados["vida_extra"][0], dados["vida_extra"][1], 32, 32)]
     total_coletaveis = len(coletaveis)
-    objetivo = criar_rect(dados["objetivo"][0], dados["objetivo"][1], 64, 64)
+    if dados["objetivo"] is None:
+        objetivo = None
+    else:
+        objetivo = criar_rect(dados["objetivo"][0], dados["objetivo"][1], 64, 64)
+    if dados.get("boss"):
+        boss = criar_rect(dados["boss_pos"][0], dados["boss_pos"][1], 96, 96)
+        boss_vida_max = dados["boss_vida"]
+        boss_vida = boss_vida_max
+        boss_direcao = -1
+        boss_projeteis = []
+        ultimo_tiro_boss = pygame.time.get_ticks()
+    else:
+        boss = None
+        boss_vida_max = 0
+        boss_vida = 0
+        boss_projeteis = []
     especiais.clear()
     atacando = False
     invulneravel_ate = 0
@@ -223,6 +275,9 @@ def mostrar_vidas():
 
 
 def mostrar_coletaveis():
+    if total_coletaveis == 0:
+        return
+
     texto = f"{total_coletaveis - len(coletaveis)}/{total_coletaveis}"
     img = fonte.render(texto, True, PRETO)
     tela.blit(coletavel_img, (20, 60))
@@ -230,7 +285,10 @@ def mostrar_coletaveis():
 
 
 def mostrar_nivel():
-    texto = f"Nivel {nivel_atual + 1}/{len(niveis)}"
+    if niveis[nivel_atual].get("boss"):
+        texto = "Boss"
+    else:
+        texto = f"Nivel {nivel_atual + 1}/{len(niveis) - 1}"
     img = fonte.render(texto, True, PRETO)
     tela.blit(img, (20, 138))
 
@@ -281,6 +339,18 @@ def arremessar_especial():
     ultimo_arremesso = agora
 
 
+def causar_dano_boss(dano):
+    global boss_vida, jogo_terminou, venceu_jogo
+
+    if boss is None or boss_vida <= 0:
+        return
+
+    boss_vida = max(0, boss_vida - dano)
+    if boss_vida == 0:
+        venceu_jogo = True
+        jogo_terminou = True
+
+
 def obter_rect_ataque():
     largura_ataque = 52
     altura_ataque = 38
@@ -308,6 +378,9 @@ def atacar_com_espada():
         if rect_ataque.colliderect(inimigo["rect"]):
             inimigos.remove(inimigo)
 
+    if boss is not None and rect_ataque.colliderect(boss):
+        causar_dano_boss(2)
+
 
 def atualizar_ataque():
     global atacando
@@ -329,6 +402,56 @@ def atualizar_especiais():
                 especiais.remove(especial)
                 inimigos.remove(inimigo)
                 break
+
+        if especial in especiais and boss is not None and especial["rect"].colliderect(boss):
+            especiais.remove(especial)
+            causar_dano_boss(1)
+
+
+def atualizar_boss():
+    global boss_direcao, ultimo_tiro_boss
+
+    if boss is None or boss_vida <= 0:
+        return
+
+    boss.x += boss_direcao * 3
+    if boss.left < 1180 or boss.right > LARGURA_NIVEL - 90:
+        boss_direcao *= -1
+
+    if jogador.colliderect(boss):
+        perder_vida()
+
+    agora = pygame.time.get_ticks()
+    if agora - ultimo_tiro_boss >= cooldown_tiro_boss:
+        direcao = -1 if jogador.centerx < boss.centerx else 1
+        tiro = pygame.Rect(boss.centerx, boss.centery - 6, 28, 12)
+        boss_projeteis.append({"rect": tiro, "vel": direcao * 7})
+        ultimo_tiro_boss = agora
+
+    for projetil in boss_projeteis[:]:
+        projetil["rect"].x += projetil["vel"]
+
+        if projetil["rect"].right < 0 or projetil["rect"].left > LARGURA_NIVEL:
+            boss_projeteis.remove(projetil)
+            continue
+
+        if projetil["rect"].colliderect(jogador):
+            boss_projeteis.remove(projetil)
+            perder_vida()
+
+
+def mostrar_barra_boss():
+    if boss is None or boss_vida <= 0:
+        return
+
+    largura_barra = min(520, LARGURA - 80)
+    altura_barra = 22
+    x = LARGURA // 2 - largura_barra // 2
+    y = 28
+    progresso = boss_vida / boss_vida_max
+
+    pygame.draw.rect(tela, PRETO, (x, y, largura_barra, altura_barra), 2)
+    pygame.draw.rect(tela, (180, 40, 55), (x + 3, y + 3, int((largura_barra - 6) * progresso), altura_barra - 6))
 
 
 def reiniciar_jogador():
@@ -394,8 +517,10 @@ while True:
             arremessar_especial()
         if evento.type == pygame.MOUSEBUTTONDOWN and evento.button == 1 and not jogo_terminou:
             atacar_com_espada()
+        if evento.type == pygame.MOUSEBUTTONDOWN and evento.button == 3 and not jogo_terminou:
+            arremessar_especial()
 
-    venceu_nivel = not coletaveis and jogador.colliderect(objetivo)
+    venceu_nivel = objetivo is not None and not coletaveis and jogador.colliderect(objetivo)
 
     if venceu_nivel and not jogo_terminou:
         avancar_nivel()
@@ -449,10 +574,16 @@ while True:
 
         atualizar_especiais()
         atualizar_ataque()
+        atualizar_boss()
 
         for coletavel in coletaveis[:]:
             if jogador.colliderect(coletavel):
                 coletaveis.remove(coletavel)
+
+        for vida_extra in vidas_extras[:]:
+            if jogador.colliderect(vida_extra):
+                vidas += 1
+                vidas_extras.remove(vida_extra)
 
         if jogador.top > ALTURA:
             perder_vida(reiniciar=True)
@@ -468,7 +599,22 @@ while True:
     for coletavel in coletaveis:
         tela.blit(coletavel_img, coletavel.move(-camera_x, 0))
 
-    tela.blit(objetivo_img, objetivo.move(-camera_x, 0))
+    for vida_extra in vidas_extras:
+        tela.blit(vida_img, vida_extra.move(-camera_x, 0))
+
+    if objetivo is not None:
+        tela.blit(objetivo_img, objetivo.move(-camera_x, 0))
+
+    if boss is not None and boss_vida > 0:
+        boss_desenho = boss_img
+        if boss_direcao < 0:
+            boss_desenho = boss_img_esquerda
+        tela.blit(boss_desenho, boss.move(-camera_x, 0))
+
+    for projetil in boss_projeteis:
+        p = projetil["rect"].move(-camera_x, 0)
+        pygame.draw.rect(tela, (180, 40, 55), p)
+        pygame.draw.rect(tela, PRETO, p, 2)
 
     for inimigo in inimigos:
         inimigo_desenho = inimigo_img
@@ -477,7 +623,10 @@ while True:
         tela.blit(inimigo_desenho, inimigo["rect"].move(-camera_x, 0))
 
     for especial in especiais:
-        tela.blit(especial_img, especial["rect"].move(-camera_x, 0))
+        especial_desenho = especial_img
+        if especial["vel"] < 0:
+            especial_desenho = especial_img_esquerda
+        tela.blit(especial_desenho, especial["rect"].move(-camera_x, 0))
 
     if atacando:
         rect_ataque = obter_rect_ataque().move(-camera_x, 0)
@@ -499,6 +648,7 @@ while True:
     mostrar_coletaveis()
     mostrar_cooldown_especial()
     mostrar_nivel()
+    mostrar_barra_boss()
 
     if venceu_jogo:
         mostrar_texto("Voce venceu todos os niveis!")
