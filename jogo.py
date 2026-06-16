@@ -4,8 +4,9 @@ import os
 
 pygame.init()
 
-LARGURA, ALTURA = 900, 500
-tela = pygame.display.set_mode((LARGURA, ALTURA))
+tela = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+LARGURA, ALTURA = tela.get_size()
+ALTURA_BASE = 500
 pygame.display.set_caption("Jogo de Plataforma")
 
 relogio = pygame.time.Clock()
@@ -41,7 +42,115 @@ especial_img = pygame.transform.scale(especial_img, (24, 24))
 arma_img = pygame.transform.scale(arma_img, (42, 42))
 inimigo_img_esquerda = pygame.transform.flip(inimigo_img, True, False)
 
-jogador = pygame.Rect(100, 300, 50, 60)
+
+def ajustar_y(y):
+    return y + ALTURA - ALTURA_BASE
+
+
+def criar_rect(x, y, largura, altura):
+    return pygame.Rect(x, ajustar_y(y), largura, altura)
+
+
+def criar_inimigo(x, y, vel, minimo, maximo):
+    return {"rect": criar_rect(x, y, 50, 50), "vel": vel, "min": minimo, "max": maximo}
+
+
+niveis = [
+    {
+        "nome": "Nivel 1",
+        "largura": 2600,
+        "inicio": (100, 300),
+        "plataformas": [
+            (0, 440, 700, 60), (760, 440, 500, 60),
+            (1350, 440, 500, 60), (1950, 440, 650, 60),
+            (220, 350, 180, 25), (520, 300, 160, 25),
+            (850, 360, 180, 25), (1120, 310, 170, 25),
+            (1450, 350, 180, 25), (1730, 290, 160, 25),
+            (2050, 340, 180, 25), (2320, 260, 170, 25),
+        ],
+        "inimigos": [
+            (520, 250, 2, 500, 680), (920, 390, 2, 760, 1260),
+            (1500, 390, 3, 1350, 1850), (2100, 390, 2, 1950, 2600),
+            (1130, 260, 2, 1120, 1290), (2330, 210, 2, 2320, 2490),
+        ],
+        "coletaveis": [
+            (290, 310), (585, 260), (925, 320), (1185, 270),
+            (1515, 310), (1785, 250), (2115, 300), (2385, 220),
+        ],
+        "objetivo": (2500, 376),
+    },
+    {
+        "nome": "Nivel 2",
+        "largura": 3200,
+        "inicio": (80, 300),
+        "plataformas": [
+            (0, 440, 520, 60), (620, 440, 420, 60),
+            (1150, 440, 360, 60), (1640, 440, 430, 60),
+            (2180, 440, 360, 60), (2650, 440, 550, 60),
+            (210, 345, 150, 25), (500, 295, 130, 25),
+            (820, 350, 145, 25), (1080, 285, 135, 25),
+            (1400, 345, 145, 25), (1700, 290, 130, 25),
+            (1990, 335, 145, 25), (2290, 280, 130, 25),
+            (2580, 330, 150, 25), (2920, 250, 150, 25),
+        ],
+        "inimigos": [
+            (300, 295, 3, 210, 360), (680, 390, 3, 620, 1040),
+            (1180, 390, 4, 1150, 1510), (1430, 295, 3, 1400, 1545),
+            (1730, 240, 3, 1700, 1830), (2240, 390, 4, 2180, 2540),
+            (2600, 280, 3, 2580, 2730), (2930, 200, 3, 2920, 3070),
+        ],
+        "coletaveis": [
+            (265, 305), (550, 255), (875, 310), (1130, 245),
+            (1455, 305), (1745, 250), (2045, 295), (2340, 240),
+            (2635, 290), (2985, 210),
+        ],
+        "objetivo": (3060, 376),
+    },
+    {
+        "nome": "Nivel 3",
+        "largura": 3800,
+        "inicio": (70, 300),
+        "plataformas": [
+            (0, 440, 460, 60), (570, 440, 330, 60),
+            (1030, 440, 310, 60), (1500, 440, 300, 60),
+            (1960, 440, 320, 60), (2420, 440, 290, 60),
+            (2860, 440, 300, 60), (3300, 440, 500, 60),
+            (180, 340, 125, 25), (430, 285, 115, 25),
+            (720, 330, 120, 25), (980, 260, 110, 25),
+            (1250, 335, 120, 25), (1490, 270, 110, 25),
+            (1760, 320, 120, 25), (2050, 250, 110, 25),
+            (2320, 335, 120, 25), (2580, 275, 110, 25),
+            (2860, 320, 120, 25), (3160, 250, 110, 25),
+            (3440, 315, 120, 25),
+        ],
+        "inimigos": [
+            (210, 290, 3, 180, 305), (600, 390, 4, 570, 900),
+            (1040, 390, 5, 1030, 1340), (1260, 285, 3, 1250, 1370),
+            (1510, 220, 4, 1490, 1600), (1780, 270, 4, 1760, 1880),
+            (1990, 390, 5, 1960, 2280), (2060, 200, 4, 2050, 2160),
+            (2450, 390, 5, 2420, 2710), (2590, 225, 4, 2580, 2690),
+            (2890, 270, 4, 2860, 2980), (3170, 200, 4, 3160, 3270),
+            (3450, 265, 4, 3440, 3560), (3360, 390, 5, 3300, 3800),
+        ],
+        "coletaveis": [
+            (225, 300), (465, 245), (760, 290), (1015, 220),
+            (1285, 295), (1525, 230), (1795, 280), (2085, 210),
+            (2355, 295), (2615, 235), (2895, 280), (3195, 210),
+            (3475, 275), (3660, 400),
+        ],
+        "objetivo": (3680, 376),
+    },
+]
+
+nivel_atual = 0
+LARGURA_NIVEL = niveis[0]["largura"]
+plataformas = []
+inimigos = []
+coletaveis = []
+total_coletaveis = 0
+objetivo = pygame.Rect(0, 0, 64, 64)
+
+jogador = pygame.Rect(100, ajustar_y(300), 50, 60)
 vel_y = 0
 velocidade = 5
 gravidade = 0.8
@@ -51,6 +160,7 @@ no_chao = False
 saltos_restantes = 2
 vidas = 2
 jogo_terminou = False
+venceu_jogo = False
 direcao_jogador = 1
 especiais = []
 cooldown_especial = 6500
@@ -63,50 +173,37 @@ ultimo_ataque = -cooldown_ataque
 invulneravel_ate = 0
 duracao_invulnerabilidade = 900
 
-LARGURA_NIVEL = 2600
-
-plataformas = [
-    pygame.Rect(0, 440, 700, 60),
-    pygame.Rect(760, 440, 500, 60),
-    pygame.Rect(1350, 440, 500, 60),
-    pygame.Rect(1950, 440, 650, 60),
-
-    pygame.Rect(220, 350, 180, 25),
-    pygame.Rect(520, 300, 160, 25),
-    pygame.Rect(850, 360, 180, 25),
-    pygame.Rect(1120, 310, 170, 25),
-    pygame.Rect(1450, 350, 180, 25),
-    pygame.Rect(1730, 290, 160, 25),
-    pygame.Rect(2050, 340, 180, 25),
-    pygame.Rect(2320, 260, 170, 25),
-]
-
-inimigos = [
-    {"rect": pygame.Rect(520, 250, 50, 50), "vel": 3, "min": 500, "max": 680},
-    {"rect": pygame.Rect(920, 390, 50, 50), "vel": 3, "min": 760, "max": 1260},
-    {"rect": pygame.Rect(1500, 390, 50, 50), "vel": 4, "min": 1350, "max": 1850},
-    {"rect": pygame.Rect(2100, 390, 50, 50), "vel": 3, "min": 1950, "max": 2600},
-    {"rect": pygame.Rect(250, 300, 50, 50), "vel": 2, "min": 220, "max": 400},
-    {"rect": pygame.Rect(1130, 260, 50, 50), "vel": 3, "min": 1120, "max": 1290},
-    {"rect": pygame.Rect(1740, 240, 50, 50), "vel": 3, "min": 1730, "max": 1890},
-    {"rect": pygame.Rect(2330, 210, 50, 50), "vel": 2, "min": 2320, "max": 2490},
-]
-
-coletaveis = [
-    pygame.Rect(290, 310, 32, 32),
-    pygame.Rect(585, 260, 32, 32),
-    pygame.Rect(925, 320, 32, 32),
-    pygame.Rect(1185, 270, 32, 32),
-    pygame.Rect(1515, 310, 32, 32),
-    pygame.Rect(1785, 250, 32, 32),
-    pygame.Rect(2115, 300, 32, 32),
-    pygame.Rect(2385, 220, 32, 32),
-]
-total_coletaveis = len(coletaveis)
-
-objetivo = pygame.Rect(2500, 376, 64, 64)
-
 fonte = pygame.font.SysFont(None, 40)
+
+
+def reiniciar_jogo():
+    global vidas, jogo_terminou, venceu_jogo, ultimo_arremesso, ultimo_ataque
+
+    vidas = 2
+    jogo_terminou = False
+    venceu_jogo = False
+    ultimo_arremesso = -cooldown_especial
+    ultimo_ataque = -cooldown_ataque
+    carregar_nivel(0)
+
+
+def carregar_nivel(indice):
+    global nivel_atual, LARGURA_NIVEL, plataformas, inimigos, coletaveis
+    global total_coletaveis, objetivo, especiais, atacando, invulneravel_ate
+
+    nivel_atual = indice
+    dados = niveis[nivel_atual]
+    LARGURA_NIVEL = dados["largura"]
+    plataformas = [criar_rect(*p) for p in dados["plataformas"]]
+    inimigos = [criar_inimigo(*i) for i in dados["inimigos"]]
+    coletaveis = [criar_rect(x, y, 32, 32) for x, y in dados["coletaveis"]]
+    total_coletaveis = len(coletaveis)
+    objetivo = criar_rect(dados["objetivo"][0], dados["objetivo"][1], 64, 64)
+    especiais.clear()
+    atacando = False
+    invulneravel_ate = 0
+    reiniciar_jogador()
+
 
 def desenhar_fundo(camera_x):
     deslocamento = int(camera_x * 0.35) % LARGURA
@@ -114,19 +211,29 @@ def desenhar_fundo(camera_x):
     tela.blit(fundo_img, (-deslocamento, 0))
     tela.blit(fundo_img, (LARGURA - deslocamento, 0))
 
+
 def mostrar_texto(texto):
     img = fonte.render(texto, True, PRETO)
     tela.blit(img, (LARGURA // 2 - img.get_width() // 2, 40))
 
+
 def mostrar_vidas():
     for i in range(vidas):
         tela.blit(vida_img, (20 + i * 38, 20))
+
 
 def mostrar_coletaveis():
     texto = f"{total_coletaveis - len(coletaveis)}/{total_coletaveis}"
     img = fonte.render(texto, True, PRETO)
     tela.blit(coletavel_img, (20, 60))
     tela.blit(img, (60, 60))
+
+
+def mostrar_nivel():
+    texto = f"Nivel {nivel_atual + 1}/{len(niveis)}"
+    img = fonte.render(texto, True, PRETO)
+    tela.blit(img, (20, 138))
+
 
 def mostrar_cooldown_especial():
     largura_barra = 150
@@ -140,6 +247,7 @@ def mostrar_cooldown_especial():
     pygame.draw.rect(tela, PRETO, (x + 34, y, largura_barra, altura_barra), 2)
     pygame.draw.rect(tela, VERDE, (x + 36, y + 2, preenchimento, altura_barra - 4))
 
+
 def desenhar_tiles(img, area):
     largura_tile, altura_tile = img.get_size()
 
@@ -148,6 +256,7 @@ def desenhar_tiles(img, area):
             largura = min(largura_tile, area.right - x)
             altura = min(altura_tile, area.bottom - y)
             tela.blit(img, (x, y), pygame.Rect(0, 0, largura, altura))
+
 
 def desenhar_plataforma(plataforma, camera_x):
     p = plataforma.move(-camera_x, 0)
@@ -158,6 +267,7 @@ def desenhar_plataforma(plataforma, camera_x):
     desenhar_tiles(relvatopo_img, topo)
     if meio.height > 0:
         desenhar_tiles(relvameio_img, meio)
+
 
 def arremessar_especial():
     global ultimo_arremesso
@@ -170,6 +280,7 @@ def arremessar_especial():
     especiais.append({"rect": rect, "vel": direcao_jogador * 10})
     ultimo_arremesso = agora
 
+
 def obter_rect_ataque():
     largura_ataque = 52
     altura_ataque = 38
@@ -179,6 +290,7 @@ def obter_rect_ataque():
         return pygame.Rect(jogador.right, y, largura_ataque, altura_ataque)
 
     return pygame.Rect(jogador.left - largura_ataque, y, largura_ataque, altura_ataque)
+
 
 def atacar_com_espada():
     global atacando, inicio_ataque, ultimo_ataque
@@ -196,11 +308,13 @@ def atacar_com_espada():
         if rect_ataque.colliderect(inimigo["rect"]):
             inimigos.remove(inimigo)
 
+
 def atualizar_ataque():
     global atacando
 
     if atacando and pygame.time.get_ticks() - inicio_ataque >= duracao_ataque:
         atacando = False
+
 
 def atualizar_especiais():
     for especial in especiais[:]:
@@ -216,13 +330,16 @@ def atualizar_especiais():
                 inimigos.remove(inimigo)
                 break
 
+
 def reiniciar_jogador():
     global vel_y, no_chao, saltos_restantes
 
-    jogador.x, jogador.y = 100, 300
+    inicio_x, inicio_y = niveis[nivel_atual]["inicio"]
+    jogador.x, jogador.y = inicio_x, ajustar_y(inicio_y)
     vel_y = 0
     no_chao = False
     saltos_restantes = 2
+
 
 def perder_vida(reiniciar=False):
     global vidas, invulneravel_ate, vel_y
@@ -242,6 +359,20 @@ def perder_vida(reiniciar=False):
         jogador.right = min(LARGURA_NIVEL, jogador.right)
         vel_y = -7
 
+
+def avancar_nivel():
+    global jogo_terminou, venceu_jogo
+
+    if nivel_atual + 1 >= len(niveis):
+        venceu_jogo = True
+        jogo_terminou = True
+        return
+
+    carregar_nivel(nivel_atual + 1)
+
+
+carregar_nivel(0)
+
 while True:
     relogio.tick(60)
 
@@ -249,6 +380,11 @@ while True:
         if evento.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
+        if evento.type == pygame.KEYDOWN and evento.key == pygame.K_ESCAPE:
+            pygame.quit()
+            sys.exit()
+        if evento.type == pygame.KEYDOWN and evento.key == pygame.K_r and jogo_terminou:
+            reiniciar_jogo()
         if evento.type == pygame.KEYDOWN and evento.key in (pygame.K_SPACE, pygame.K_UP) and not jogo_terminou:
             if saltos_restantes > 0:
                 vel_y = forca_pulo if saltos_restantes == 2 else forca_salto_duplo
@@ -259,8 +395,13 @@ while True:
         if evento.type == pygame.MOUSEBUTTONDOWN and evento.button == 1 and not jogo_terminou:
             atacar_com_espada()
 
-    venceu = not coletaveis and jogador.colliderect(objetivo)
-    jogo_terminou = venceu or vidas <= 0
+    venceu_nivel = not coletaveis and jogador.colliderect(objetivo)
+
+    if venceu_nivel and not jogo_terminou:
+        avancar_nivel()
+
+    if vidas <= 0:
+        jogo_terminou = True
 
     if not jogo_terminou:
         teclas = pygame.key.get_pressed()
@@ -316,9 +457,6 @@ while True:
         if jogador.top > ALTURA:
             perder_vida(reiniciar=True)
 
-        venceu = not coletaveis and jogador.colliderect(objetivo)
-        jogo_terminou = venceu or vidas <= 0
-
     camera_x = jogador.centerx - LARGURA // 2
     camera_x = max(0, min(camera_x, LARGURA_NIVEL - LARGURA))
 
@@ -356,13 +494,15 @@ while True:
     jogador_visivel = agora >= invulneravel_ate or agora // 100 % 2 == 0
     if jogador_visivel:
         tela.blit(jogador_desenho, jogador.move(-camera_x, 0))
+
     mostrar_vidas()
     mostrar_coletaveis()
     mostrar_cooldown_especial()
+    mostrar_nivel()
 
-    if venceu:
-        mostrar_texto("Você venceu!")
+    if venceu_jogo:
+        mostrar_texto("Voce venceu todos os niveis!")
     elif vidas <= 0:
-        mostrar_texto("Fim de jogo!")
+        mostrar_texto("Fim de jogo! Pressione R para reiniciar")
 
     pygame.display.flip()
