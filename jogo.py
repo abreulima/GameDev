@@ -35,7 +35,9 @@ vel_y = 0
 velocidade = 5
 gravidade = 0.8
 forca_pulo = -15
+forca_salto_duplo = -11
 no_chao = False
+saltos_restantes = 2
 vidas = 3
 jogo_terminou = False
 direcao_jogador = 1
@@ -142,11 +144,12 @@ def atualizar_especiais():
                 break
 
 def reiniciar_jogador():
-    global vel_y, no_chao
+    global vel_y, no_chao, saltos_restantes
 
     jogador.x, jogador.y = 100, 300
     vel_y = 0
     no_chao = False
+    saltos_restantes = 2
 
 def perder_vida():
     global vidas
@@ -161,6 +164,11 @@ while True:
         if evento.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
+        if evento.type == pygame.KEYDOWN and evento.key in (pygame.K_SPACE, pygame.K_UP) and not jogo_terminou:
+            if saltos_restantes > 0:
+                vel_y = forca_pulo if saltos_restantes == 2 else forca_salto_duplo
+                no_chao = False
+                saltos_restantes -= 1
         if evento.type == pygame.KEYDOWN and evento.key == pygame.K_f and not jogo_terminou:
             arremessar_especial()
 
@@ -177,10 +185,6 @@ while True:
         if teclas[pygame.K_RIGHT] or teclas[pygame.K_d]:
             dx = velocidade
             direcao_jogador = 1
-
-        if (teclas[pygame.K_SPACE] or teclas[pygame.K_UP]) and no_chao:
-            vel_y = forca_pulo
-            no_chao = False
 
         jogador.x += dx
 
@@ -200,6 +204,7 @@ while True:
                     jogador.bottom = plataforma.top
                     vel_y = 0
                     no_chao = True
+                    saltos_restantes = 2
                 elif vel_y < 0:
                     jogador.top = plataforma.bottom
                     vel_y = 0
@@ -247,7 +252,11 @@ while True:
     for especial in especiais:
         tela.blit(especial_img, especial["rect"].move(-camera_x, 0))
 
-    tela.blit(jogador_img, jogador.move(-camera_x, 0))
+    jogador_desenho = jogador_img
+    if direcao_jogador == -1:
+        jogador_desenho = pygame.transform.flip(jogador_img, True, False)
+
+    tela.blit(jogador_desenho, jogador.move(-camera_x, 0))
     mostrar_vidas()
     mostrar_coletaveis()
     mostrar_cooldown_especial()
