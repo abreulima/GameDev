@@ -67,8 +67,14 @@ def criar_rect(x, y, largura, altura):
     return pygame.Rect(x, ajustar_y(y), largura, altura)
 
 
-def criar_inimigo(x, y, vel, minimo, maximo):
-    return {"rect": criar_rect(x, y, 50, 50), "vel": vel, "min": minimo, "max": maximo}
+def criar_inimigo(x, y, vel, minimo, maximo, inimigo_id=None):
+    return {
+        "id": inimigo_id,
+        "rect": criar_rect(x, y, 50, 50),
+        "vel": vel,
+        "min": minimo,
+        "max": maximo,
+    }
 
 
 class ClienteRede:
@@ -78,6 +84,9 @@ class ClienteRede:
         self.socket = None
         self.fila = queue.Queue()
         self.jogadores = {}
+        self.inimigos_mortos = set()
+        self.inimigos_estado = []
+        self.eventos_recebidos = []
         self.id = None
         self.conectado = False
 
@@ -125,13 +134,19 @@ class ClienteRede:
                 self.id = mensagem.get("id")
             elif mensagem.get("tipo") == "estado":
                 self.jogadores = mensagem.get("jogadores", {})
+                self.inimigos_mortos = set(mensagem.get("inimigos_mortos", []))
+                self.inimigos_estado = mensagem.get("inimigos_estado", [])
+                self.eventos_recebidos.extend(mensagem.get("eventos", []))
 
-    def enviar_estado(self, estado):
+    def enviar_estado(self, estado, eventos):
         if not self.conectado or self.socket is None:
             return
 
         try:
-            mensagem = json.dumps({"tipo": "estado", "estado": estado}, separators=(",", ":")) + "\n"
+            mensagem = json.dumps(
+                {"tipo": "estado", "estado": estado, "eventos": eventos},
+                separators=(",", ":"),
+            ) + "\n"
             self.socket.sendall(mensagem.encode("utf-8"))
         except OSError:
             self.conectado = False
@@ -288,6 +303,7 @@ ultimo_ataque = -cooldown_ataque
 invulneravel_ate = 0
 duracao_invulnerabilidade = 900
 cliente_rede = ClienteRede(SERVIDOR_IP, SERVIDOR_PORTA) if ONLINE else None
+eventos_rede_pendentes = []
 ultimo_envio_rede = 0
 intervalo_envio_rede = 1 / 30
 
@@ -315,7 +331,10 @@ def carregar_nivel(indice):
     dados = niveis[nivel_atual]
     LARGURA_NIVEL = dados["largura"]
     plataformas = [criar_rect(*p) for p in dados["plataformas"]]
-    inimigos = [criar_inimigo(*i) for i in dados["inimigos"]]
+    inimigos = [
+        criar_inimigo(*i, inimigo_id=f"{nivel_atual}:{indice}")
+        for indice, i in enumerate(dados["inimigos"])
+    ]
     coletaveis = [criar_rect(x, y, 32, 32) for x, y in dados["coletaveis"]]
     if dados["vida_extra"] is None:
         vidas_extras = []
@@ -401,6 +420,63 @@ def mostrar_cooldown_especial():
     pygame.draw.rect(tela, VERDE, (x + 36, y + 2, preenchimento, altura_barra - 4))
 
 
+def remover_inimigo(inimigo, avisar_rede=True):
+    if inimigo not in inimigos:
+        return
+
+    inimigos.remove(inimigo)
+    if avisar_rede and inimigo.get("id") is not None:
+        eventos_rede_pendentes.append({"tipo": "inimigo_morto", "id": inimigo["id"]})
+
+
+def aplicar_inimigos_mortos_rede():
+    if cliente_rede is None:
+        return
+
+    for inimigo in inimigos[:]:
+        if inimigo.get("id") in cliente_rede.inimigos_mortos:
+            remover_inimigo(inimigo, avisar_rede=False)
+
+
+def aplicar_estado_inimigos_rede():
+    if cliente_rede is None or not cliente_rede.inimigos_estado:
+        return
+
+    por_id = {inimigo.get("id"): inimigo for inimigo in inimigos}
+    for estado in cliente_rede.inimigos_estado:
+        inimigo = por_id.get(estado.get("id"))
+        if inimigo is None:
+            continue
+
+        inimigo["rect"].x = int(estado.get("x", inimigo["rect"].x))
+        inimigo["rect"].y = int(estado.get("y", inimigo["rect"].y))
+        inimigo["vel"] = int(estado.get("vel", inimigo["vel"]))
+
+
+def ids_jogadores_atingidos(rect):
+    if cliente_rede is None:
+        return []
+
+    atingidos = []
+    for jogador_id, estado in cliente_rede.jogadores.items():
+        if estado.get("nivel") != nivel_atual:
+            continue
+
+        outro = pygame.Rect(int(estado.get("x", 0)), int(estado.get("y", 0)), 50, 60)
+        if rect.colliderect(outro):
+            try:
+                atingidos.append(int(jogador_id))
+            except ValueError:
+                pass
+
+    return atingidos
+
+
+def causar_dano_pvp(rect):
+    for jogador_id in ids_jogadores_atingidos(rect):
+        eventos_rede_pendentes.append({"tipo": "dano_pvp", "alvo": jogador_id})
+
+
 def atualizar_rede():
     global ultimo_envio_rede
 
@@ -408,6 +484,13 @@ def atualizar_rede():
         return
 
     cliente_rede.atualizar()
+    aplicar_inimigos_mortos_rede()
+    aplicar_estado_inimigos_rede()
+    for evento in cliente_rede.eventos_recebidos:
+        if evento.get("tipo") == "dano_pvp" and not jogo_terminou:
+            perder_vida()
+    cliente_rede.eventos_recebidos.clear()
+
     agora = time.time()
     if agora - ultimo_envio_rede < intervalo_envio_rede:
         return
@@ -419,8 +502,19 @@ def atualizar_rede():
         "nivel": nivel_atual,
         "vidas": vidas,
         "atacando": atacando,
+        "inimigos": [
+            {
+                "id": inimigo.get("id"),
+                "x": inimigo["rect"].x,
+                "y": inimigo["rect"].y,
+                "vel": inimigo["vel"],
+            }
+            for inimigo in inimigos
+        ],
     }
-    cliente_rede.enviar_estado(estado)
+    eventos = eventos_rede_pendentes[:]
+    eventos_rede_pendentes.clear()
+    cliente_rede.enviar_estado(estado, eventos)
     ultimo_envio_rede = agora
 
 
@@ -514,7 +608,9 @@ def atacar_com_espada():
 
     for inimigo in inimigos[:]:
         if rect_ataque.colliderect(inimigo["rect"]):
-            inimigos.remove(inimigo)
+            remover_inimigo(inimigo)
+
+    causar_dano_pvp(rect_ataque)
 
     if boss is not None and rect_ataque.colliderect(boss):
         causar_dano_boss(2)
@@ -539,8 +635,13 @@ def atualizar_especiais():
         for inimigo in inimigos[:]:
             if especial["rect"].colliderect(inimigo["rect"]):
                 especiais.remove(especial)
-                inimigos.remove(inimigo)
+                remover_inimigo(inimigo)
                 break
+
+        if especial in especiais and ids_jogadores_atingidos(especial["rect"]):
+            causar_dano_pvp(especial["rect"])
+            especiais.remove(especial)
+            continue
 
         if especial in especiais and boss is not None and especial["rect"].colliderect(boss):
             especiais.remove(especial)
